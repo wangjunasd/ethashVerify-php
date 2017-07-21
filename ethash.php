@@ -27,7 +27,7 @@ class ethash
  // hash length in bytes
     static $DATASET_PARENTS = 256;
  // number of parents of each dataset element
-    static $CACHE_ROUNDS = 3;
+    static $CACHE_ROUNDS = 1;
  // number of rounds in cache production
     static $ACCESSES = 64;
  // number of accesses in hashimoto loop
@@ -88,7 +88,7 @@ class ethash
             
             $this->cacheBySeed[$seed]['fetchtime'] = time();
             
-            return $this->cacheBySeed[$seed];
+            return $this->cacheBySeed[$seed]['val'];
         }
         
         $c = $this->makeCache($blockNumber);
@@ -144,49 +144,56 @@ class ethash
 
     public function _getCache($seed, $n)
     {
-        $o = array();
-        
-        $firstSeedHash = $this->sha3_512($seed);
-        
-        $o[] = $firstSeedHash['hash'];
-        
-        $lastHex = $firstSeedHash['hex'];
+        $o = '';
         
         echo "n:" . $n;
+
+
+        $lastHex=$seed;
+        $n=10000;
         
-        //$n=10;
-        
-        for ($i = 1; $i < $n; $i ++) {
+        for ($i = 0; $i < $n; $i ++) {
             
             $tempSeedHash = $this->sha3_512($lastHex);
             
-            $o[] = $tempSeedHash['hash'];
+            //$o.= $tempSeedHash;
             
-            $lastHex = $tempSeedHash['hex'];
+            $lastHex = $tempSeedHash;
         }
-        
+
+
         for ($i = 0; $i < self::$CACHE_ROUNDS; $i ++) {
             
             for ($j = 0; $j < $n; $j ++) {
+
+                $offsetForTemp=$this->unpackUint32($this->letterenbian(substr($o,$j,4)));
                 
-                $tempKey = $o[$j][0] % $n;
+                $tempKey = $offsetForTemp % $n;
                 
                 $fixKey = ($j + $n - 1) % $n;
-                
-                $newo='';
-                
-                for ($k=0;$k<16;$k++){
-                    $newo.=pack('V',$o[$tempKey][$k]^$o[$fixKey][$k]);
+
+                $newoHash=$this->sha3_512(substr($o,$tempKey*64,64)^substr($o,$fixKey*64,64));
+
+                for($k=0;$k<64;$k++){
+                    $o[$j*64+$k]=$newoHash[$k];
                 }
-                echo "tempkey:".$tempKey."\r\n";
-                echo "fixKey:".$fixKey."\r\n";
-                $newoHash=$this->sha3_512($newo);
-                
-                $o[$j] = $newoHash['hash'];
+
+                //or
+//                if ($j==0){
+//                    $o=$newoHash.substr($o,($j+1)*64);
+//                }
+//
+//                if ($j>0&&$j<($n-1)){
+//                    $o=substr($o,0,$j*64).$newoHash.substr($o,($j+1)*64);
+//                }
+//
+//                if ($j==($n-1)){
+//                    $o=substr($o,0,$j*64).$newoHash;
+//                }
+
             }
         }
-        
-        //print_r($o);
+
         
         return $o;
     }
@@ -198,7 +205,11 @@ class ethash
         $sponge->absorb($x);
         
         $hex = $sponge->squeeze();
-        
+
+        unset($sponge);
+
+        return $hex;
+
         return array(
             'hex' => $hex,
             'hash' => $this->deserializeHash($hex)
@@ -211,7 +222,8 @@ class ethash
         
         $sponge->absorb($x);
         $hex = $sponge->squeeze();
-        
+        unset($sponge);
+
         return array(
             'hex' => $hex,
             'hash' => $this->deserializeHash($hex)
