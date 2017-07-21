@@ -21,6 +21,8 @@ class ethash{
     static $DATASET_PARENTS = 256;             # number of parents of each dataset element
     static $CACHE_ROUNDS = 3;                  # number of rounds in cache production
     static $ACCESSES = 64;                     # number of accesses in hashimoto loop
+
+
     
     
     static $FNV_PRIME = 0x01000193;
@@ -58,64 +60,122 @@ class ethash{
     private function getCache($blockNumber){
         
         $seedLen=count($this->cacheSeeds);
+        //get epoch
+        $epochId=floor($blockNumber/self::$EPOCH_LENGTH);
         
-        for ($i=$seedLen;$i<=$blockNumber;$i++){
+        for ($i=$seedLen;$i<=$epochId;$i++){
             
             $sponge = SHA3::init (SHA3::SHA3_256);
             
             
-            $salt=$this->Hex2String($this->cacheSeeds[$i-1]);
+            $salt=$this->hex2String($this->cacheSeeds[$i-1]);
             
             $sponge->absorb ($salt);
             
             $this->cacheSeeds[]=pack('H*',$sponge->squeeze ());
         }
         
-        $seed=$this->cacheSeeds[$blockNumber];
+        $seed=$this->cacheSeeds[$epochId];
         
         if (isset($this->cacheBySeed[$seed])){
+
+            $this->cacheBySeed[$seed]['fetchtime']=time();
          
-            //@todo 移除最近访问的数据
+
             return $this->cacheBySeed[$seed];
             
         }
+
+        $c=$this->makeCache($blockNumber);
         
+        $this->cacheBySeed[$seed]=array(
+            'val'=>$c,
+            'fetchtime'=>time()
+        );
+
+        //remove last recently accessed
+        if (count($this->cacheBySeed)>$this->maxItems){
+            $mintime=time();
+            $seedkey=false;
+
+            foreach ($this->cacheBySeed as $key=>$val){
+                if ($val['fetchtime']<$mintime){
+                    $mintime=$val['fetchtime'];
+                    $seedkey=$key;
+                }
+            }
+
+            if (false!==$seedkey){
+                unset($this->cacheBySeed[$seedkey]);
+            }
+
+        }
         
-        
-        
-        
-//         seed = cache_seeds[block_number // EPOCH_LENGTH]
-//             if seed in cache_by_seed:
-//             c = cache_by_seed.pop(seed)  # pop and append at end
-//             cache_by_seed[seed] = c
-//             return c
-//             c = mkcache(block_number)
-//             cache_by_seed[seed] = c
-//             if len(cache_by_seed) > cache_by_seed.max_items:
-//             cache_by_seed.pop(cache_by_seed.keys()[0])  # remove last recently accessed
-//             return c
+        return $c;
     }
     
     private function makeCache($blockNumber){
-        
-        
-        
+
+        $seedLen=count($this->cacheSeeds);
+        //get epoch
+        $epochId=floor($blockNumber/self::$EPOCH_LENGTH);
+
+
+        for ($i=$seedLen;$i<=$epochId;$i++){
+
+            $sponge = SHA3::init (SHA3::SHA3_256);
+
+
+            $salt=$this->hex2String($this->cacheSeeds[$i-1]);
+
+            $sponge->absorb ($salt);
+
+            $this->cacheSeeds[]=pack('H*',$sponge->squeeze ());
+        }
+
+        $seed=$this->cacheSeeds[$epochId];
+
+        $n=floor($this->getCacheSize($blockNumber)/self::$HASH_BYTES);
+
+        return $this->_getCache($seed,$n);
+    }
+
+    private function _getCache($seed,$n){
+        $o=array();
+        $o[]=$this->sha3_512($seed);
+
+
+    }
+
+    private function sha3_512(){
+
     }
     
     private function getCacheSize($blockNumber){
-        $sz = self::$CACHE_BYTES_INIT + self::CACHE_BYTES_GROWTH * ($blockNumber);
-        $sz -= self::HASH_BYTES
-            
-            while not isprime($sz):
-                $sz -= 2 * self::HASH_BYTES
-                return $sz
-        
+        $sz = self::$CACHE_BYTES_INIT + (self::CACHE_BYTES_GROWTH * floor($blockNumber/self::$EPOCH_LENGTH));
+        $sz -= self::HASH_BYTES;
+
+        while (!$this->isPrimeNum(floor($sz/self::$HASH_BYTES))){
+            $sz-=2*self::$HASH_BYTES;
+        }
+
+        return $sz;
     }
-    private function isprime($x){
-        
+
+    private function isPrimeNum($x){
+            $max=floor(sqrt($x));
+
+            if($max>2){
+                for ($i=2;$i<$max;$i++){
+                    if (!($x%$i)){
+                        return false;
+                    }
+                }
+            }
+            return true;
     }
     
-    function String2Hex($string){
+    private function string2Hex($string){
         $hex='';
         for ($i=0; $i < strlen($string); $i++){
             $hex .= dechex(ord($string[$i]));
@@ -124,7 +184,7 @@ class ethash{
     }
     
     
-    function Hex2String($hex){
+    private function hex2String($hex){
         $string='';
         for ($i=0; $i < strlen($hex)-1; $i+=2){
             $string .= chr(hexdec($hex[$i].$hex[$i+1]));
