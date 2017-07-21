@@ -1,15 +1,5 @@
 <?php 
 
-/**
-	SHA-3 (FIPS-202) for PHP strings (byte arrays) (PHP 5.2.1+)
-	PHP 7.0 computes SHA-3 about 4 times faster than PHP 5.2 - 5.6 (on x86_64)
-	
-	Based on the reference implementations, which are under CC-0
-	Reference: http://keccak.noekeon.org/
-	
-	This uses PHP's native byte strings. Supports 32-bit as well as 64-bit
-	systems. Also for LE vs. BE systems.
-*/
 class SHA3 {
 	const SHA3_224 = 1;
 	const SHA3_256 = 2;
