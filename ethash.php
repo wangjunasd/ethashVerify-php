@@ -10,27 +10,27 @@ class ethash
     private $maxItems = 10;
 
     static $WORD_BYTES = 4;
- // bytes in word
+    // bytes in word
     static $DATASET_BYTES_INIT = 1073741824;
- // bytes in dataset at genesis
+    // bytes in dataset at genesis
     static $DATASET_BYTES_GROWTH = 8388608;
- // growth per epoch (~7 GB per year)
+    // growth per epoch (~7 GB per year)
     static $CACHE_BYTES_INIT = 16777216;
- // Size of the dataset relative to the cache @todo
+    // Size of the dataset relative to the cache @todo
     static $CACHE_BYTES_GROWTH = 131072;
- // Size of the dataset relative to the cache
+    // Size of the dataset relative to the cache
     static $EPOCH_LENGTH = 30000;
- // blocks per epoch
+    // blocks per epoch
     static $MIX_BYTES = 128;
- // width of mix
+    // width of mix
     static $HASH_BYTES = 64;
- // hash length in bytes
+    // hash length in bytes
     static $DATASET_PARENTS = 256;
- // number of parents of each dataset element
-    static $CACHE_ROUNDS = 1;
- // number of rounds in cache production
+    // number of parents of each dataset element
+    static $CACHE_ROUNDS = 3;
+    // number of rounds in cache production
     static $ACCESSES = 64;
- // number of accesses in hashimoto loop
+    // number of accesses in hashimoto loop
     static $FNV_PRIME = 0x01000193;
 
     public function __construct()
@@ -56,11 +56,111 @@ class ethash
      */
     public function verify($pendingBlockNumber, $hashNoNonce, $mixDigest, $nonce, $difficulty)
     {
-        if (strlen($mixDigest) !== 32 || strlen($hashNoNonce) !== 32 || strlen($nonce) !== 8) {
+        if (strlen($mixDigest) !== 32 || strlen($hashNoNonce) !== 32 ) {
             return false;
         }
         
         $dagCache = $this->getCache($pendingBlockNumber);
+        
+        $miningOutput = $this->hashimotoLight($pendingBlockNumber,$dagCache,$hashNoNonce,$nonce);
+        
+        var_dump(unpack('H*', $miningOutput['digest']));
+        
+        var_dump(unpack('H*', $miningOutput['result']));
+        
+    }
+
+    public function hashimotoLight($blockNumber, $cache, $headerHash, $nonce)
+    {
+        return $this->hashimoto($headerHash, $nonce, $this->getFullSize($blockNumber), $cache);
+    }
+
+    private function hashimoto($header, $nonce, $fullSize, $cache)
+    {
+        $n = floor($fullSize / self::$HASH_BYTES);
+        $w = floor(self::$MIX_BYTES / self::$WORD_BYTES);
+        
+        $mixhashes = floor(self::$MIX_BYTES / self::$HASH_BYTES);
+        
+        $mix = '';
+        
+        $s = $this->sha3_512($header . $this->letterenbian($nonce));
+        
+        for ($k = 0; $k < $mixhashes; $k ++) {
+            $mix .= $s;
+        }
+        
+        for ($i = 0; $i < self::$ACCESSES; $i ++) {
+            
+            $p = $this->fnv($i ^ $this->unpackUint32($this->letterenbian(substr($s, 0, 4))), $this->unpackUint32($this->letterenbian(substr($mix, ($i % $w) * 4, 4))));
+            
+            $p = ($p % floor($n / $mixhashes)) * $mixhashes;
+            
+            $newdata = '';
+            
+            for ($j = 0; $j < $mixhashes; $j ++) {
+                $newdata.= $this->calcDatasetItem($cache, $p + $j);
+            }
+            // mix has 128bit ~ 32 int
+            $newmix='';
+            for ($k=0;$k<32;$k++){
+                $newmix.=pack('V',$this->fnv($this->getNum($mix,$k), $this->getNum($newdata,$k)));
+            }
+            
+            $mix=$newmix;
+        }
+        
+        $cmix='';
+        
+        for ($i=0;$i<32;$i+=4){
+            
+            $cmix.=pack('V',$this->fnv($this->fnv($this->fnv($this->getNum($mix,$i), $this->getNum($mix,$i+1)), $this->getNum($mix,$i+2)), $this->getNum($mix,$i+3)));
+            
+        }
+        
+        return array(
+            'digest'=>$cmix,
+            'result'=>$this->sha3_256($s.$cmix)
+        );
+        
+    }
+
+    private function calcDatasetItem($cache, $i)
+    {
+        // 64 is length of hash string.
+        $n = strlen($cache) / 64;
+        
+        $r = floor(self::$HASH_BYTES / self::$WORD_BYTES);
+        
+        $mix = substr($cache, ($i % $n) * 64, 64);
+        
+        $mix = pack('V', $this->getNum($mix, 0) ^ $i) . substr($mix, 4);
+        
+        $mix = $this->sha3_512($mix);
+        
+        $newmix='';
+        
+        for ($j = 0; $j < self::$DATASET_PARENTS; $j ++) {
+            
+            $cacheIndex = $this->fnv($i ^ $j, $this->getNum($mix, $j % $r));
+            
+            $currentCache=substr($cache, ($cacheIndex%$n)*64,64);
+            
+            
+            for ($k=0;$k<16;$k++){
+                
+                $newmix.=pack('V',$this->fnv($this->getNum($mix,$k), $this->getNum($currentCache,$k)));
+                
+            }
+            
+        }
+        
+        return $this->sha3_512($newmix);
+    }
+
+    private function getNum($hex, $offset = 0)
+    {
+        return $this->unpackUint32($this->letterenbian(substr($hex, $offset * 4, 4)));
     }
 
     public function getCache($blockNumber)
@@ -72,14 +172,7 @@ class ethash
         echo $epochId;
         
         for ($i = $seedLen; $i <= $epochId; $i ++) {
-            
-            $sponge = SHA3::init(SHA3::SHA3_256);
-            
-            $salt = $this->hex2String($this->cacheSeeds[$i - 1]);
-            
-            $sponge->absorb($salt);
-            
-            $this->cacheSeeds[] = $sponge->squeeze();
+            $this->cacheSeeds[] = sha3($this->hex2String($this->cacheSeeds[$i - 1]), 256, true);
         }
         
         $seed = $this->cacheSeeds[$epochId];
@@ -118,7 +211,7 @@ class ethash
         return $c;
     }
 
-    public function makeCache($blockNumber)
+    private function makeCache($blockNumber)
     {
         $seedLen = count($this->cacheSeeds);
         // get epoch
@@ -126,13 +219,7 @@ class ethash
         
         for ($i = $seedLen; $i <= $epochId; $i ++) {
             
-            $sponge = SHA3::init(SHA3::SHA3_256);
-            
-            $salt = $this->hex2String($this->cacheSeeds[$i - 1]);
-            
-            $sponge->absorb($salt);
-            
-            $this->cacheSeeds[] = $sponge->squeeze();
+            $this->cacheSeeds[] = sha3($this->hex2String($this->cacheSeeds[$i - 1]), 256, true);
         }
         
         $seed = $this->cacheSeeds[$epochId];
@@ -142,95 +229,59 @@ class ethash
         return $this->_getCache($seed, $n);
     }
 
-    public function _getCache($seed, $n)
+    private function _getCache($seed, $n)
     {
         $o = '';
         
         echo "n:" . $n;
-
-
-        $lastHex=$seed;
-        $n=10000;
+        
+        $lastHex = $seed;
         
         for ($i = 0; $i < $n; $i ++) {
             
             $tempSeedHash = $this->sha3_512($lastHex);
             
-            //$o.= $tempSeedHash;
+            $o .= $tempSeedHash;
             
             $lastHex = $tempSeedHash;
         }
-
-
+        
+        echo "\r\n o length:" . strlen($o);
+        
         for ($i = 0; $i < self::$CACHE_ROUNDS; $i ++) {
             
             for ($j = 0; $j < $n; $j ++) {
-
-                $offsetForTemp=$this->unpackUint32($this->letterenbian(substr($o,$j,4)));
+                
+                $offsetForTemp = $this->unpackUint32($this->letterenbian(substr($o, $j, 4)));
                 
                 $tempKey = $offsetForTemp % $n;
                 
                 $fixKey = ($j + $n - 1) % $n;
-
-                $newoHash=$this->sha3_512(substr($o,$tempKey*64,64)^substr($o,$fixKey*64,64));
-
-                for($k=0;$k<64;$k++){
-                    $o[$j*64+$k]=$newoHash[$k];
+                
+                $newoHash = $this->sha3_512(substr($o, $tempKey * 64, 64) ^ substr($o, $fixKey * 64, 64));
+                
+                for ($k = 0; $k < 64; $k ++) {
+                    $o[$j * 64 + $k] = $newoHash[$k];
                 }
-
-                //or
-//                if ($j==0){
-//                    $o=$newoHash.substr($o,($j+1)*64);
-//                }
-//
-//                if ($j>0&&$j<($n-1)){
-//                    $o=substr($o,0,$j*64).$newoHash.substr($o,($j+1)*64);
-//                }
-//
-//                if ($j==($n-1)){
-//                    $o=substr($o,0,$j*64).$newoHash;
-//                }
-
             }
         }
-
+        
+        echo "\r\n o length:" . strlen($o);
         
         return $o;
     }
 
-    public function sha3_512($x)
+    private function sha3_512($x)
     {
-        $sponge = SHA3::init(SHA3::SHA3_512);
-        
-        $sponge->absorb($x);
-        
-        $hex = $sponge->squeeze();
-
-        unset($sponge);
-
-        return $hex;
-
-        return array(
-            'hex' => $hex,
-            'hash' => $this->deserializeHash($hex)
-        );
+        return sha3($x, 512, true);
     }
 
-    public function sha3_256($x)
+    private function sha3_256($x)
     {
-        $sponge = SHA3::init(SHA3::SHA3_256);
-        
-        $sponge->absorb($x);
-        $hex = $sponge->squeeze();
-        unset($sponge);
-
-        return array(
-            'hex' => $hex,
-            'hash' => $this->deserializeHash($hex)
-        );
+        return sha3($x, 256, true);
     }
 
-    public function deserializeHash($hash)
+    private function deserializeHash($hash)
     {
         $intAry = array();
         
@@ -258,7 +309,7 @@ class ethash
         return $d;
     }
 
-    public function getCacheSize($blockNumber)
+    private function getCacheSize($blockNumber)
     {
         $epochId = floor($blockNumber / self::$EPOCH_LENGTH);
         
@@ -272,7 +323,7 @@ class ethash
         return $sz;
     }
 
-    public function letterenbian($n)
+    private function letterenbian($n)
     {
         $return = '';
         for ($i = 0; $i < strlen($n); $i += 1) {
@@ -281,7 +332,7 @@ class ethash
         return $return;
     }
 
-    public function getFullSize($blockNumber)
+    private function getFullSize($blockNumber)
     {
         $epochId = floor($blockNumber / self::$EPOCH_LENGTH);
         
@@ -296,7 +347,7 @@ class ethash
         return $sz;
     }
 
-    public function isPrimeNum($x)
+    private function isPrimeNum($x)
     {
         $max = floor(sqrt($x));
         
@@ -310,7 +361,7 @@ class ethash
         return true;
     }
 
-    public function string2Hex($string)
+    private function string2Hex($string)
     {
         $hex = '';
         for ($i = 0; $i < strlen($string); $i ++) {
@@ -319,7 +370,7 @@ class ethash
         return $hex;
     }
 
-    public function hex2String($hex)
+    private function hex2String($hex)
     {
         return $hex;
         $string = '';
@@ -327,5 +378,10 @@ class ethash
             $string .= chr(hexdec($hex[$i] . $hex[$i + 1]));
         }
         return $string;
+    }
+
+    private function fnv($v1, $v2)
+    {
+        return ($v1 * self::$FNV_PRIME ^ $v2) % 4294967296;
     }
 }
