@@ -31,7 +31,7 @@ class ethash
     // number of rounds in cache production
     static $ACCESSES = 64;
     // number of accesses in hashimoto loop
-    static $FNV_PRIME = 0x01000193;
+    static $FNV_PRIME = 16777619;
 
     public function __construct()
     {
@@ -72,6 +72,7 @@ class ethash
 
     public function hashimotoLight($blockNumber, $cache, $headerHash, $nonce)
     {
+        echo $this->getFullSize($blockNumber);
         return $this->hashimoto($headerHash, $nonce, $this->getFullSize($blockNumber), $cache);
     }
 
@@ -172,7 +173,7 @@ class ethash
         echo $epochId;
         
         for ($i = $seedLen; $i <= $epochId; $i ++) {
-            $this->cacheSeeds[] = sha3($this->hex2String($this->cacheSeeds[$i - 1]), 256, true);
+            $this->cacheSeeds[] = sha3($this->cacheSeeds[$i - 1], 256, true);
         }
         
         $seed = $this->cacheSeeds[$epochId];
@@ -233,8 +234,6 @@ class ethash
     {
         $o = '';
         
-        echo "n:" . $n;
-        
         $lastHex = $seed;
         
         for ($i = 0; $i < $n; $i ++) {
@@ -252,21 +251,34 @@ class ethash
             
             for ($j = 0; $j < $n; $j ++) {
                 
-                $offsetForTemp = $this->unpackUint32($this->letterenbian(substr($o, $j, 4)));
+                $newoHash='';
+                
+                $offsetForTemp = $this->unpackUint32($this->letterenbian(substr($o, $j*64, 4)));
                 
                 $tempKey = $offsetForTemp % $n;
                 
                 $fixKey = ($j + $n - 1) % $n;
                 
-                $newoHash = $this->sha3_512(substr($o, $tempKey * 64, 64) ^ substr($o, $fixKey * 64, 64));
+                $temp1=substr($o, $tempKey * 64, 64);
+                $temp2=substr($o, $fixKey * 64, 64);
+                
+                $newoHash='';
+                
+                for ($k=0;$k<16;$k++){
+                    
+                    
+                    $newoHash.=pack('V',$this->getNum($temp1,$k)^$this->getNum($temp2,$k));
+                    
+                }
+                
+                
+                //$newoHash = $this->sha3_512(substr($o, $tempKey * 64, 64) ^ substr($o, $fixKey * 64, 64));
                 
                 for ($k = 0; $k < 64; $k ++) {
-                    $o[$j * 64 + $k] = $newoHash[$k];
+                    $o[(($j * 64) + $k)] = $newoHash[$k];
                 }
             }
         }
-        
-        echo "\r\n o length:" . strlen($o);
         
         return $o;
     }
@@ -382,6 +394,6 @@ class ethash
 
     private function fnv($v1, $v2)
     {
-        return ($v1 * self::$FNV_PRIME ^ $v2) % 4294967296;
+        return (($v1 * self::$FNV_PRIME) ^ $v2) % 4294967296;
     }
 }
