@@ -105,7 +105,7 @@ class ethash
             // mix has 128bit ~ 32 int
             $newmix='';
             for ($k=0;$k<32;$k++){
-                $newmix.=pack('V',$this->fnv($this->getNum($mix,$k), $this->getNum($newdata,$k)));
+                $newmix.=pack('N',$this->fnv($this->getNum($mix,$k), $this->getNum($newdata,$k)));
             }
             
             $mix=$newmix;
@@ -115,7 +115,7 @@ class ethash
         
         for ($i=0;$i<32;$i+=4){
             
-            $cmix.=pack('V',$this->fnv($this->fnv($this->fnv($this->getNum($mix,$i), $this->getNum($mix,$i+1)), $this->getNum($mix,$i+2)), $this->getNum($mix,$i+3)));
+            $cmix.=pack('N',$this->fnv($this->fnv($this->fnv($this->getNum($mix,$i), $this->getNum($mix,$i+1)), $this->getNum($mix,$i+2)), $this->getNum($mix,$i+3)));
             
         }
         
@@ -135,7 +135,7 @@ class ethash
         
         $mix = substr($cache, ($i % $n) * 64, 64);
         
-        $mix = pack('V', $this->getNum($mix, 0) ^ $i) . substr($mix, 4);
+        $mix = pack('N', $this->getNum($mix, 0) ^ $i) . substr($mix, 4);
         
         $mix = $this->sha3_512($mix);
         
@@ -150,7 +150,7 @@ class ethash
             
             for ($k=0;$k<16;$k++){
                 
-                $newmix.=pack('V',$this->fnv($this->getNum($mix,$k), $this->getNum($currentCache,$k)));
+                $newmix.=pack('N',$this->fnv($this->getNum($mix,$k), $this->getNum($currentCache,$k)));
                 
             }
             
@@ -267,7 +267,7 @@ class ethash
                 for ($k=0;$k<16;$k++){
                     
                     
-                    $newoHash.=pack('V',$this->getNum($temp1,$k)^$this->getNum($temp2,$k));
+                    $newoHash.=pack('N',$this->getNum($temp1,$k)^$this->getNum($temp2,$k));
                     
                 }
                 
