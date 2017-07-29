@@ -122,7 +122,7 @@ class ethash
         
         return array(
             'digest'=>$this->serializeHash($cmix),
-            'result'=>$this->serializeHash($this->sha3_256($s.$cmix))
+            'result'=>$this->serializeHash($this->sha3_256(array_merge($s,$cmix)))
         );
         
     }
@@ -140,7 +140,7 @@ class ethash
         
         $mix = $this->sha3_512($mix);
         
-        $newmix=array();
+        
         
         for ($j = 0; $j < self::$DATASET_PARENTS; $j ++) {
             
@@ -148,12 +148,15 @@ class ethash
             
             $currentCache=$cache[$cacheIndex%$n];
             
+            $newmix=array();
             
             for ($k=0;$k<16;$k++){
                 
                 $newmix[]=$this->fnv($mix[$k], $currentCache[$k]);
                 
             }
+            
+            $mix=$this->sha3_512($newmix);
             
         }
         
@@ -241,7 +244,7 @@ class ethash
             $lastHex = $tempSeedHash;
         }
         
-        echo "\r\n o length:" . strlen($o);
+        echo "\r\n o length:" . count($o)*64;
         
         for ($i = 0; $i < self::$CACHE_ROUNDS; $i ++) {
             
