@@ -72,7 +72,6 @@ class ethash
 
     public function hashimotoLight($blockNumber, $cache, $headerHash, $nonce)
     {
-        echo "\r\ndag size:".$this->getFullSize($blockNumber);
         return $this->hashimoto($headerHash, $nonce, $this->getFullSize($blockNumber), $cache);
     }
 
@@ -95,14 +94,15 @@ class ethash
 
             
             $p = $this->fnv($i ^ $this->getNum($s, 0), $this->getNum($mix, $i % $w));
-            
+                       
             $p = ($p % floor($n / $mixhashes)) * $mixhashes;
-            
+           
             $newdata = '';
             
             for ($j = 0; $j < $mixhashes; $j ++) {
                 $newdata .= $this->calcDatasetItem($cache, $p + $j);
             }
+           
             // mix has 128bit ~ 32 int
             $newmix='';
 
@@ -123,7 +123,7 @@ class ethash
         }
         
         return array(
-            'digest'=>$cmix,
+            'digest'=>$cmix,  
             'result'=>$this->sha3_256($s.$cmix)
         );
         
@@ -174,7 +174,6 @@ class ethash
         echo $epochId;
         
         for ($i = $seedLen; $i <= $epochId; $i ++) {
-            //$this->cacheSeeds[] = sha3($this->cacheSeeds[$i - 1], 256, true);
             $this->cacheSeeds[] = keccak_hash($this->cacheSeeds[$i - 1], 256);
         }
         
@@ -222,7 +221,7 @@ class ethash
         
         for ($i = $seedLen; $i <= $epochId; $i ++) {
             
-            $this->cacheSeeds[] = sha3($this->cacheSeeds[$i - 1], 256, true);
+            $this->cacheSeeds[] =  keccak_hash($this->cacheSeeds[$i - 1], 256);
         }
         
         $seed = $this->cacheSeeds[$epochId];
@@ -271,6 +270,7 @@ class ethash
                 }
             }
         }
+
         
         return $o;
     }
@@ -443,6 +443,6 @@ class ethash
 
     private function fnv($v1, $v2)
     {
-        return (($v1 * self::$FNV_PRIME) ^ $v2);
+        return (($v1 * self::$FNV_PRIME) ^ $v2)%pow(2, 32);
     }
 }

@@ -8,10 +8,10 @@ $ethasher=new ethash();
 //$ethasher->getCache(134926);
 
 $result=array(
-    'nonce'=>pack('H*','b77683680317d940'),
-    'mixDigest'=>pack('H*','285ecd9720aa5d1d49e0f9e2b0ab2d582e9df3472d8695b2ba7a00147dc4b9fc'),
-    'header'=>pack('H*','b220fec3161f3c9445150661f611de6d08674ba6980d3b2a2a1dcdc60f936e3f'),
-    'number'=>4188176
+    'nonce'=>pack('H*','4c7bee700ff3a6e1'),
+    'mixDigest'=>pack('H*','abefdef554d24afada3960e78b809a5d51f6ffa068a52f392a314fcebb6dd132'),
+    'header'=>pack('H*','747eafbc7e3a343ab390c1942711a8285b40ce2e6417d25f4aa2e34c2226160c'),
+    'number'=>4090000
     
 );
 
