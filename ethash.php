@@ -174,7 +174,8 @@ class ethash
         echo $epochId;
         
         for ($i = $seedLen; $i <= $epochId; $i ++) {
-            $this->cacheSeeds[] = sha3($this->cacheSeeds[$i - 1], 256, true);
+            //$this->cacheSeeds[] = sha3($this->cacheSeeds[$i - 1], 256, true);
+            $this->cacheSeeds[] = keccak_hash($this->cacheSeeds[$i - 1], 256);
         }
         
         $seed = $this->cacheSeeds[$epochId];
@@ -290,8 +291,8 @@ class ethash
             $content=implode('', $content);
         }
         
-        $y=sha3($content, $bit, true);
-        
+        //$y=sha3($content, $bit, true);
+        $y=keccak_hash($content, $bit);
         return $y;
         
 
@@ -301,7 +302,7 @@ class ethash
             $content=$this->serializeHash($content);
         }
 
-        $y=sha3($content, $bit, true);
+       // $y=sha3($content, $bit, true);
 
 
         return $this->deserializeHash($y);
@@ -374,7 +375,7 @@ class ethash
     
     private function getNum($buf,$n){
         
-        return $this->letterenbian($this->unpackUint32(substr($buf, $n*4,4)));
+        return $this->unpackUint32($this->letterenbian(substr($buf, $n*4,4)));
     }
     
     private function setNum($n){
