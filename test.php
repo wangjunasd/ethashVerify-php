@@ -1,5 +1,4 @@
 <?php
-include 'sha3.php';
 include 'ethash.php';
 
 $starttime=time();
@@ -17,9 +16,8 @@ $result=array(
 );
 
 
-$ethasher->verify($result['number'], $result['header'], $result['mixDigest'], $result['nonce'], 1241794215185927);
+$result=$ethasher->verify($result['number'], $result['header'], $result['mixDigest'], $result['nonce'], '0xffff','0xffffffff');
 
+var_dump($result);
 
 echo "cost:".(time()-$starttime)."\r\n";
-
-

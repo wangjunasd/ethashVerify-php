@@ -1,4 +1,5 @@
 <?php
+include 'bigInt.php';
 
 class ethash
 {
@@ -54,25 +55,50 @@ class ethash
      *            
      * @return bool true or false
      */
-    public function verify($pendingBlockNumber, $hashNoNonce, $mixDigest, $nonce, $difficulty)
+    public function verify($pendingBlockNumber, $hashNoNonce, $mixDigest, $nonce, $difficulty, $diffNetwork = false)
     {
-        if (strlen($mixDigest) !== 32 || strlen($hashNoNonce) !== 32 ) {
+        if (strlen($mixDigest) !== 32 || strlen($hashNoNonce) !== 32 || strlen($nonce) !== 8) {
             return false;
         }
         
         $dagCache = $this->getCache($pendingBlockNumber);
         
-        $miningOutput = $this->hashimotoLight($pendingBlockNumber,$dagCache,$hashNoNonce,$nonce);
+        $miningOutput = $this->hashimotoLight($pendingBlockNumber, $dagCache, $hashNoNonce, $nonce);
         
-        var_dump(unpack('H*', $miningOutput['digest']));
+        if ($mixDigest != $miningOutput['digest']) {
+            
+            return false;
+        }
         
-        var_dump(unpack('H*', $miningOutput['result']));
+        $hashDiff = new Math_BigInteger($miningOutput['result'], 16);
         
+        $pow2_256 = new Math_BigInteger('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', 16);
+        
+        if (false != $diffNetwork) {
+            $diffNetwork = new Math_BigInteger($diffNetwork, 16);
+            
+            // first compare network difficulty
+            list ($quotient, $remainder) = $pow2_256->divide($diffNetwork);
+            
+            if ($hashDiff->compare($quotient) < 0) {
+                return 2;
+            }
+        }
+        
+        $diffNum = new Math_BigInteger($difficulty, 16);
+        
+        
+        list ($quotient, $remainder) = $pow2_256->divide($diffNum);
+        
+        if ($hashDiff->compare($quotient) < 0) {
+            return 1;
+        }
+        
+        return false;
     }
 
     public function hashimotoLight($blockNumber, $cache, $headerHash, $nonce)
     {
-        echo $this->getFullSize($blockNumber);
         return $this->hashimoto($headerHash, $nonce, $this->getFullSize($blockNumber), $cache);
     }
 
@@ -83,84 +109,80 @@ class ethash
         
         $mixhashes = floor(self::$MIX_BYTES / self::$HASH_BYTES);
         
-        $mix = array();
+        $mix = '';
         
         $s = $this->sha3_512($header . $this->letterenbian($nonce));
         
         for ($k = 0; $k < $mixhashes; $k ++) {
-            $mix=array_merge($mix,$s);
+            $mix .= $s;
         }
         
         for ($i = 0; $i < self::$ACCESSES; $i ++) {
-
-            $p = $this->fnv($i ^ $s[0], $mix[$i % $w]);
+            
+            $p = $this->fnv($i ^ $this->getNum($s, 0), $this->getNum($mix, $i % $w));
             
             $p = ($p % floor($n / $mixhashes)) * $mixhashes;
             
-            $newdata = array();
+            $newdata = '';
             
             for ($j = 0; $j < $mixhashes; $j ++) {
-                $newdata = array_merge($newdata,$this->calcDatasetItem($cache, $p + $j));
-            }
-            // mix has 128bit ~ 32 int
-            $newmix=array();
-
-            for ($k=0;$k<32;$k++){
-                $newmix[]=$this->fnv($mix[$k], $newdata[$k]);
+                $newdata .= $this->calcDatasetItem($cache, $p + $j);
             }
             
-            $mix=$newmix;
+            // mix has 128bit ~ 32 int
+            $newmix = '';
+            
+            for ($k = 0; $k < 32; $k ++) {
+                $newmix .= $this->setNum($this->fnv($this->getNum($mix, $k), $this->getNum($newdata, $k)));
+            }
+            
+            $mix = $newmix;
         }
         
-        $cmix=array();
+        $cmix = '';
         
-        for ($i=0;$i<32;$i+=4){
+        for ($i = 0; $i < 32; $i += 4) {
             
-            $cmix[]=$this->fnv($this->fnv($this->fnv($mix[$i], $mix[$i+1]), $mix[$i+2]), $mix[$i+3]);
-            
+            $cmix .= $this->setNum($this->fnv($this->fnv($this->fnv($this->getNum($mix, $i), $this->getNum($mix, $i + 1)), $this->getNum($mix, $i + 2)), $this->getNum($mix, $i + 3)));
         }
         
         return array(
-            'digest'=>$this->serializeHash($cmix),
-            'result'=>$this->serializeHash($this->sha3_256(array_merge($s,$cmix)))
+            'digest' => $cmix,
+            'result' => $this->sha3_256($s . $cmix)
         );
-        
     }
 
     private function calcDatasetItem($cache, $i)
     {
-        // 64 is length of hash string.
-        $n = count($cache);
+        // the length of hash string is 64 byte.
+        $n = strlen($cache) / 64;
         
         $r = floor(self::$HASH_BYTES / self::$WORD_BYTES);
         
-        $mix = $cache[$i%$n];
+        $mix = substr($cache, ($i % $n) * 64, 64);
         
-        $mix[0] ^=  $i;
+        $mix = $this->setNum($this->getNum($mix, 0) ^ $i) . substr($mix, 4);
         
         $mix = $this->sha3_512($mix);
         
-        
-        
         for ($j = 0; $j < self::$DATASET_PARENTS; $j ++) {
             
-            $cacheIndex = $this->fnv($i ^ $j, $mix[$j % $r]);
+            $cacheIndex = $this->fnv($i ^ $j, $this->getNum($mix, $j % $r));
             
-            $currentCache=$cache[$cacheIndex%$n];
+            $currentCache = substr($cache, ($cacheIndex % $n) * 64, 64);
             
-            $newmix=array();
+            $newmix = '';
             
-            for ($k=0;$k<16;$k++){
+            //
+            for ($k = 0; $k < 16; $k ++) {
                 
-                $newmix[]=$this->fnv($mix[$k], $currentCache[$k]);
-                
+                $newmix .= $this->setNum($this->fnv($this->getNum($mix, $k), $this->getNum($currentCache, $k)));
             }
             
-            $mix=$this->sha3_512($newmix);
-            
+            $mix = $newmix;
         }
         
-        return $this->sha3_512($newmix);
+        return $this->sha3_512($mix);
     }
 
     public function getCache($blockNumber)
@@ -169,10 +191,8 @@ class ethash
         // get epoch
         $epochId = floor($blockNumber / self::$EPOCH_LENGTH);
         
-        echo $epochId;
-        
         for ($i = $seedLen; $i <= $epochId; $i ++) {
-            $this->cacheSeeds[] = keccak_hash($this->cacheSeeds[$i - 1], 256);
+            $this->cacheSeeds[] = $this->sha3_256($this->cacheSeeds[$i - 1]);
         }
         
         $seed = $this->cacheSeeds[$epochId];
@@ -219,7 +239,7 @@ class ethash
         
         for ($i = $seedLen; $i <= $epochId; $i ++) {
             
-            $this->cacheSeeds[] = keccak_hash($this->cacheSeeds[$i - 1], 256);
+            $this->cacheSeeds[] = $this->sha3_256($this->cacheSeeds[$i - 1]);
         }
         
         $seed = $this->cacheSeeds[$epochId];
@@ -231,7 +251,7 @@ class ethash
 
     private function _getCache($seed, $n)
     {
-        $o = array();
+        $o = '';
         
         $lastHex = $seed;
         
@@ -239,34 +259,30 @@ class ethash
             
             $tempSeedHash = $this->sha3_512($lastHex);
             
-            $o[] = $tempSeedHash;
+            $o .= $tempSeedHash;
             
             $lastHex = $tempSeedHash;
         }
         
-        echo "\r\n o length:" . count($o)*64;
-        
         for ($i = 0; $i < self::$CACHE_ROUNDS; $i ++) {
             
             for ($j = 0; $j < $n; $j ++) {
-
-                $tempKey = $o[$j][0] % $n;
+                
+                $tempKey = $this->getNum(substr($o, $j * 64, 64), 0) % $n;
                 
                 $fixKey = ($j + $n - 1) % $n;
-
                 
-                $newoHash=array();
+                $newoHash = '';
                 
-                for ($k=0;$k<16;$k++){
-                    
-                    
-                    $newoHash[]=$o[$fixKey][$k]^$o[$tempKey][$k];
-                    
+                for ($k = 0; $k < 64; $k ++) {
+                    $newoHash .= substr($o, $fixKey * 64 + $k, 1) ^ substr($o, $tempKey * 64 + $k, 1);
                 }
-
-                $newoHash=$this->sha3_512($newoHash);
                 
-                $o[$j]=$newoHash;
+                $newoHash = $this->sha3_512($newoHash);
+                
+                for ($k = 0; $k < 64; $k ++) {
+                    $o[$j * 64 + $k] = $newoHash[$k];
+                }
             }
         }
         
@@ -275,64 +291,24 @@ class ethash
 
     private function sha3_512($x)
     {
-        return $this->hashWords($x,512);
+        return $this->hashWords($x, 512);
     }
 
     private function sha3_256($x)
     {
-        return $this->hashWords($x,256);
+        return $this->hashWords($x, 256);
     }
 
-    private function hashWords($content,$bit=512){
-
-        if (is_array($content)) {
-
-            $content=$this->serializeHash($content);
-        }
-
-        //$y=sha3($content, $bit, true);
-
-        $y=keccak_hash($content,$bit);
-
-        return $this->deserializeHash($y);
-    }
-
-    private function serializeHash($content){
-        $newcontent='';
-
-        //convert to hex
-        foreach ($content as $item) {
-            $hex = '';
-
-            if ($item > 0) {
-
-                $itemhex = dechex($item);
-
-                $temp = str_pad($itemhex, strlen($itemhex) + (strlen($itemhex) % 2), '0', STR_PAD_LEFT);
-
-                $hex = pack('H*', $this->letterenbian($temp));
-            }
-
-            $newcontent .= str_pad($hex, 4, 0x00);
-
-        }
-
-        return$newcontent;
-    }
-
-    private function deserializeHash($hash)
+    private function hashWords($content, $bit = 512)
     {
-        $intAry = array();
-        
-        $len = strlen($hash);
-        
-        for ($i = 0; $i < $len; $i += self::$WORD_BYTES) {
-            $temp = $this->letterenbian(substr($hash, $i, self::$WORD_BYTES));
+        if (is_array($content)) {
             
-            $intAry[] = $this->unpackUint32($temp);
+            $content = implode('', $content);
         }
         
-        return $intAry;
+        $y = keccak_hash($content, $bit);
+        
+        return $y;
     }
 
     private function unpackUint32($hex)
@@ -362,10 +338,22 @@ class ethash
         return $sz;
     }
 
+    private function getNum($buf, $n)
+    {
+        return $this->unpackUint32($this->letterenbian(substr($buf, $n * 4, 4)));
+    }
+
+    private function setNum($n)
+    {
+        return $this->letterenbian(pack('N', $n));
+    }
+
     private function letterenbian($n)
     {
         $return = '';
-        for ($i = 0; $i < strlen($n); $i += 1) {
+        $len = strlen($n);
+        
+        for ($i = 0; $i < $len; $i += 1) {
             $return = substr($n, $i, 1) . $return;
         }
         return $return;
@@ -398,25 +386,6 @@ class ethash
             }
         }
         return true;
-    }
-
-    private function string2Hex($string)
-    {
-        $hex = '';
-        for ($i = 0; $i < strlen($string); $i ++) {
-            $hex .= dechex(ord($string[$i]));
-        }
-        return $hex;
-    }
-
-    private function hex2String($hex)
-    {
-        return $hex;
-        $string = '';
-        for ($i = 0; $i < strlen($hex) - 1; $i += 2) {
-            $string .= chr(hexdec($hex[$i] . $hex[$i + 1]));
-        }
-        return $string;
     }
 
     private function fnv($v1, $v2)
