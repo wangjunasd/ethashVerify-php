@@ -1,4 +1,5 @@
 <?php
+date_default_timezone_set('PRC');
 /**
  * Pure-PHP arbitrary precision integer arithmetic library.
  *

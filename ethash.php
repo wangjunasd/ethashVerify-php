@@ -70,7 +70,7 @@ class ethash
             return false;
         }
         
-        $hashDiff = new Math_BigInteger($miningOutput['result'], 16);
+        $hashDiff = new Math_BigInteger($miningOutput['result'], 256);
         
         $pow2_256 = new Math_BigInteger('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', 16);
         
